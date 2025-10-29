@@ -56,12 +56,17 @@ app.post("/fetch-user", async (req, res) => {
 app.post("/api/send-code/v1", async (req, res) => {
   const { email, code } = req.body;
   const transporter = nodemailer.createTransport({
-   service: 'gmail',
-   auth: {
-     user: user,
-     pass: key
-   }
- })
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false, 
+    auth: {
+       user: user,
+       pass: key
+    },
+    tls: {
+      rejectUnauthorized: false
+    }
+  })
  
  const mailOptions = {
   from: 'nazoratechnologylimited@gmail.com',

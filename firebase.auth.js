@@ -16,7 +16,7 @@ const verifyAndCreateUser = async (userData) => {
       return {code: 200, message: "user was created"};
     } else {
       console.log('User already exists');
-      return {code: 500, message: "Error"};
+      return {code: 500, message: "User already exists"};
     }
   } catch (error) {
     console.error(error);
