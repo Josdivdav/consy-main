@@ -1,33 +1,22 @@
-const { db } = require("./admin.firebase.js");
+const { db, admin } = require("./admin.firebase.js");
 
 async function createPost(postMeta) {
-  const { text, mediaData, uuid, reactions, timestamp } = postMeta;
-  const { mediaURL, mediaType } = mediaData;
-  const { likes, comments, dislikes } = reactions;
-  const h = [];
-  text.replace(/#\w+/g, (match) => {
-    h.push(match);
-  });
-  console.log(h)
+  const { text, mediaFiles, pid, reactions, timestamp } = postMeta;
+  const { likes, comments } = reactions;
   const postRef = db.collection('posts');
   const userRef = db.collection('users');
-  const user_query = userRef.where('userId', '==', uuid).limit(1);
+  const user_query = userRef.where('portalID', '==', pid).limit(1);
   const userQuerySnapshot = await user_query.get();
   if (!userQuerySnapshot.empty) {
     const id = db.collection('posts').doc().id;
     await postRef.doc(id).set({
-      userId: uuid,
+      portalID: pid,
       text: text,
-      mediaData: {
-        mediaURL: mediaURL,
-        mediaType: mediaType
-      },
-      hashtags: h,
+      mediaFiles: mediaFiles,
       timestamp: timestamp,
       reactions: {
         likes: likes,
         comments: comments,
-        dislikes: dislikes
       },
       postId: id
     });
@@ -37,9 +26,8 @@ async function createPost(postMeta) {
   }
 }
 
-async function getPost(uid) {
+async function getPost(pid) {
   const postRef = db.collection("posts");
-  //const query = await postRef.where("userId", "==", uid);
   const query_snapshot = await postRef.get();
   if(!query_snapshot.empty) {
     const data = query_snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -48,5 +36,34 @@ async function getPost(uid) {
     return "Error";
   }
 }
+async function reactionControlLike(pid, portalId) {
+  const postRef = db.collection("posts").doc(pid);
 
-module.exports = { createPost, getPost };
+  try {
+    await db.runTransaction(async (transaction) => {
+      const doc = await transaction.get(postRef);
+      if (!doc.exists) {
+        throw new Error("Post not found");
+      }
+
+      const reactions = doc.data().reactions || {};
+      const likes = reactions.likes || [];
+
+      if (!likes.includes(portalId)) {
+        transaction.update(postRef, {
+          'reactions.likes': admin.firestore.FieldValue.arrayUnion(portalId)
+        });
+      } else{
+        transaction.update(postRef, {
+          'reactions.likes': admin.firestore.FieldValue.arrayRemove(portalId)
+        })
+      }
+    });
+    return (await postRef.get()).data();
+  } catch (error) {
+    console.error(error);
+    return "Error";
+  }
+}
+
+module.exports = { createPost, getPost, reactionControlLike };

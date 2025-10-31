@@ -1,7 +1,7 @@
 const { db } = require("./admin.firebase.js");
 async function getUserData(uid) {
   const usersRef = db.collection('users');
-  const query = usersRef.where('userId', '==', uid).limit(1);
+  const query = usersRef.where('portalID', '==', uid).limit(1);
   try {
     const querySnapshot = await query.get();
     if (!querySnapshot.empty) {

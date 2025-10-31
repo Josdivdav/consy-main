@@ -10,10 +10,24 @@ const { db, secret_key, mailings } = require("./admin.firebase.js");
 const { generateToken, verifyToken } = require("./jwt.utils.js");
 const { verifyAndCreateUser, verifyAndLogUserIn } = require("./firebase.auth.js");
 const { getUserData, getUsers } = require("./user.js");
-const { createPost, getPost } = require("./post.js");
-const { svn } = require("./numbers.js")
+const { createPost, getPost, reactionControlLike } = require("./post.js");
+const { svn } = require("./numbers.js");
+const multer = require('multer');
+const path = require('path');
+
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'uploads/'); // Folder to save files
+  },
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + path.extname(file.originalname)); // Unique filename
+  }
+});
+const upload = multer({ storage: storage });
+
 const { key, user } = mailings;
 app.use(cors());
+app.use('/uploads', express.static('uploads'));
 const io = socketServer(http, {cors: {origin: '*'}});
 const authenticateSocket = (socket, next) => {
   const token = socket.handshake.auth.token;
@@ -27,7 +41,6 @@ const authenticateSocket = (socket, next) => {
 };
 
 io.use(authenticateSocket);
-
 io.on('connection', (socket) => {
   console.log('Client connected id: '+socket.id);
   socket.on("authenticate", (r) => {
@@ -37,13 +50,17 @@ io.on('connection', (socket) => {
   socket.on("fetchUserData", async (sid, uid) => {
     io.to(sid).emit("fetchUserData", await getUserData(uid));
   })
-  socket.on("createPost", async (postData) => {
-    const { content, mediaData, uuid, sid, reactions, timestamp } = postData;
-    const response = await createPost({text: content, mediaData: mediaData, uuid: uuid, timestamp: timestamp, reactions});
-    io.to(sid).emit("createPost", response);
+  socket.on("create-post", async (postData) => {
+    const { sid } = postData;
+    try {
+      const response = await createPost(postData);
+      io.to(sid).emit("create-post", response);
+    } catch(err) {
+      io.to(sid).emit("create-post", "Error occured");
+    }
   })
-  socket.on("fetchPost", async (sid, uid) => {
-    io.to(sid).emit("fetchPost", await getPost(uid), sid);
+  socket.on("fetch-post", async (sid, uid) => {
+    io.to(sid).emit("fetch-post", await getPost(uid), sid);
   })
 });
 
@@ -53,6 +70,12 @@ app.post("/fetch-user", async (req, res) => {
   userId ? res.json(await getUserData(userId)) : res.json(await getUsers());
 })
 
+app.post("/api/post-react-like", async (req, res) => {
+  const { postId, portalId } = req.body;
+  const response = await reactionControlLike(postId, portalId);
+  res.json({likes: response.reactions.likes});
+})
+
 app.post("/api/send-code/v1", async (req, res) => {
   const { email, code } = req.body;
   const transporter = nodemailer.createTransport({
@@ -60,44 +83,50 @@ app.post("/api/send-code/v1", async (req, res) => {
     port: 587,
     secure: false, 
     auth: {
-       user: user,
-       pass: key
+      user: user,
+      pass: key
     },
     tls: {
       rejectUnauthorized: false
     }
   })
  
- const mailOptions = {
-  from: 'nazoratechnologylimited@gmail.com',
-  to: email,
-  subject: "Consy - Code",
-  text: '',
-  html: `
-   <html>
-   <body>
-    <h2>Hello there,</h2>
-    <p>You recently signed up for our application. To complete your registration, please use the verification code below:</p>
-    <h1>Verification Code: ${code}</h1>
-    <p>Enter this code on the verification page to activate your account.</p>
-    <p>If you didn't sign up for our application, please disregard this email.</p>
-    <p>Best regards,</p>
-    <p>Consy Inc</p>
-   </body>
-   </html>
-  `
- }
- transporter.sendMail(mailOptions, (error, info) => {
-  if (error) {
-    console.log('Error:', error);
-    res.status(500).send({code: 500, message: "Invalid email address"});
-  } else {
-    console.log('Email sent:', info.response);
-    res.json({code: 200, message: "Code was sent"});
+  const mailOptions = {
+    from: 'nazoratechnologylimited@gmail.com',
+    to: email,
+    subject: "Consy - Code",
+    text: '',
+    html: `
+    <html>
+    <body>
+      <h2>Hello there,</h2>
+      <p>You recently signed up for our application. To complete your registration, please use the verification code below:</p>
+      <h1>Verification Code: ${code}</h1>
+      <p>Enter this code on the verification page to activate your account.</p>
+      <p>If you didn't sign up for our application, please disregard this email.</p>
+      <p>Best regards,</p>
+      <p>Consy Inc</p>
+    </body>
+    </html>
+    `
   }
- })
-
+  transporter.sendMail(mailOptions, (error, info) => {
+    if (error) {
+      console.log('Error:', error);
+      res.status(500).send({code: 500, message: "Invalid email address"});
+    } else {
+      console.log('Email sent:', info.response);
+      res.json({code: 200, message: "Code was sent"});
+    }
+  })
 })
+
+app.post("/api/upload", upload.single('file'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).send({ message: 'No file uploaded' });
+  }
+  res.json({ filePath: req.file.path, type: req.file.mimetype });
+});
 
 // register a user
 app.post("/api/register", async (req, res) => {

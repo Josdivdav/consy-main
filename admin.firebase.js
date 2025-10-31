@@ -23,4 +23,4 @@ const mailings = {
   key: process.env.GMAIL_KEY,
   user: process.env.GMAIL_ADDR
 }
-module.exports = { db, secret_key, mailings };
+module.exports = { db, secret_key, mailings, admin };
